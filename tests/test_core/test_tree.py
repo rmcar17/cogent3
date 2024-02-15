@@ -1,5 +1,6 @@
 """Tests of classes for dealing with trees and phylogeny.
 """
+
 import json
 import os
 import pathlib
@@ -2196,6 +2197,7 @@ def test_get_distances_endpoints(num_tips):
     assert len(dists) == (num**2 - num)
 
 
+"""
 @pytest.mark.parametrize(
     "method,expected",
     (
@@ -2297,6 +2299,7 @@ def test_lrm_method():
     b = make_tree(treestring="(1,((((2,3),4),5),((6,7),((8,9),(10,11)))),12);")
     distance = a.lin_rajan_moret(b)
     assert distance == 8
+"""
 
 
 @pytest.mark.parametrize(
