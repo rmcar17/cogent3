@@ -2197,23 +2197,23 @@ def test_get_distances_endpoints(num_tips):
     assert len(dists) == (num**2 - num)
 
 
-# @pytest.mark.parametrize(
-#     "method,expected",
-#     (
-#         ("lin_rajan_moret", 3),
-#         ("lrm", 3),
-#         ("matching", 3),
-#         (None, 3),
-#         ("unrooted_robinson_foulds", 4),
-#         ("urf", 4),
-#         ("rf", 4),
-#     ),
-# )
-# def test_tree_distance_unrooted(method, expected):
-#     tree1 = make_tree(treestring="(a,b,(c,(d,e)));")
-#     tree2 = make_tree(treestring="((a,c),(b,d),e);")
+@pytest.mark.parametrize(
+    "method,expected",
+    (
+        ("lin_rajan_moret", 3),
+        ("lrm", 3),
+        ("matching", 3),
+        (None, 3),
+        ("unrooted_robinson_foulds", 4),
+        ("urf", 4),
+        ("rf", 4),
+    ),
+)
+def test_tree_distance_unrooted(method, expected):
+    tree1 = make_tree(treestring="(a,b,(c,(d,e)));")
+    tree2 = make_tree(treestring="((a,c),(b,d),e);")
 
-#     assert tree1.tree_distance(tree2, method=method) == expected
+    assert tree1.tree_distance(tree2, method=method) == expected
 
 
 # @pytest.mark.parametrize(
