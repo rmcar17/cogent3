@@ -1102,7 +1102,7 @@ class Sequence(SequenceI):
             raise ValueError("GenbankAnnotationDb already attached")
 
         self.annotation_db = load_annotations(
-            path=f, seqids=self.name, db=self.annotation_db
+            path=f, seqids=self.name, db=self.annotation_db, backend="duckdb"
         )
 
         if offset:

@@ -18,6 +18,7 @@
     passed in a stream of two-item label, sequence pairs. However, this can
     cause confusion when testing.
 """
+
 from __future__ import annotations
 
 import functools
@@ -68,6 +69,7 @@ from cogent3.core.genetic_code import get_code
 from cogent3.core.info import Info as InfoClass
 from cogent3.core.profile import PSSM, MotifCountsArray
 from cogent3.core.sequence import ArraySequence, Sequence, frac_same
+
 # which is a circular import otherwise.
 from cogent3.format.alignment import save_to_filename
 from cogent3.format.fasta import alignment_to_fasta
@@ -1971,7 +1973,7 @@ class SequenceCollection(_SequenceCollectionBase):
             seq_ids = self.names
 
         self.annotation_db = load_annotations(
-            path=f, seqids=seq_ids, db=self.annotation_db
+            path=f, seqids=seq_ids, db=self.annotation_db, backend="duckdb"
         )
 
     def make_feature(

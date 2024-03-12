@@ -23,7 +23,8 @@ dependencies = ["chardet",
         "scipy",
         "scitrack",
         "tqdm",
-        "typing_extensions"]
+        "typing_extensions",
+        "duckdb"]
 # remember to update version in requires-python and classifiers
 requires-python = ">=3.9,<3.13"
 classifiers = [

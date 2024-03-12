@@ -12,6 +12,7 @@ import sys
 import typing
 
 import numpy
+import duckdb
 import typing_extensions
 
 from cogent3._version import __version__
@@ -72,14 +73,11 @@ class FeatureDataType(typing.TypedDict):
 
 @typing.runtime_checkable
 class SerialisableType(typing.Protocol):  # pragma: no cover
-    def to_rich_dict(self) -> dict:
-        ...
+    def to_rich_dict(self) -> dict: ...
 
-    def to_json(self) -> str:
-        ...
+    def to_json(self) -> str: ...
 
-    def from_dict(self, data):
-        ...
+    def from_dict(self, data): ...
 
 
 @typing.runtime_checkable
@@ -96,18 +94,15 @@ class SupportsQueryFeatures(typing.Protocol):  # pragma: no cover
         strand: OptionalStr = None,
         attributes: OptionalStr = None,
         on_alignment: OptionalBool = None,
-    ) -> typing.Iterator[FeatureDataType]:
-        ...
+    ) -> typing.Iterator[FeatureDataType]: ...
 
     def get_feature_children(
         self, *, name: str, start: OptionalInt = None, end: OptionalInt = None, **kwargs
-    ) -> typing.List[FeatureDataType]:
-        ...
+    ) -> typing.List[FeatureDataType]: ...
 
     def get_feature_parent(
         self, *, name: str, start: OptionalInt = None, end: OptionalInt = None, **kwargs
-    ) -> typing.List[FeatureDataType]:
-        ...
+    ) -> typing.List[FeatureDataType]: ...
 
     def num_matches(
         self,
@@ -118,8 +113,7 @@ class SupportsQueryFeatures(typing.Protocol):  # pragma: no cover
         strand: OptionalStr = None,
         attributes: OptionalStr = None,
         on_alignment: OptionalBool = None,
-    ) -> int:
-        ...
+    ) -> int: ...
 
     def subset(
         self,
@@ -131,8 +125,7 @@ class SupportsQueryFeatures(typing.Protocol):  # pragma: no cover
         end: OptionalInt = None,
         strand: OptionalStr = None,
         attributes: OptionalStr = None,
-    ):
-        ...
+    ): ...
 
 
 @typing.runtime_checkable
@@ -149,8 +142,7 @@ class SupportsWriteFeatures(typing.Protocol):  # pragma: no cover
         attributes: OptionalStr = None,
         strand: OptionalStr = None,
         on_alignment: bool = False,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def add_records(
         self,
@@ -158,8 +150,7 @@ class SupportsWriteFeatures(typing.Protocol):  # pragma: no cover
         records: typing.Sequence[dict],
         # seqid required for genbank
         seqid: OptionalStr = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def update(self, annot_db, seqids: OptionalStrList = None) -> None:
         # update records with those from an instance of the same type
@@ -448,6 +439,39 @@ def _compatible_schema(db: sqlite3.Connection, schema: dict[str, set]) -> bool:
     return True
 
 
+def _compatible_schema_duckdb(db: duckdb.DU, schema: dict[str, set]) -> bool:
+    """ensures the db instance is compatible with schema"""
+    for table in db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall():
+        print(table)
+        table = table[0]
+        if table not in schema:
+            return False
+
+        db_schema = {
+            (row[1], clean_type(row[2]))
+            for row in db.execute(f"pragma table_info({table!r})").fetchall()
+        }
+
+        schema[table] = {(a, clean_type(b)) for a, b in schema[table]}
+
+        if len(db_schema & schema[table]) != len(db_schema):
+            return False
+
+    return True
+
+
+def clean_type(t):
+    if t == "VARCHAR":
+        return "TEXT"
+    if t == "INTEGER[]":
+        return "array"
+    if t == "INT":
+        return "INTEGER"
+    return t
+
+
 class SqliteAnnotationDbMixin:
     # table schema for user provided annotations
     _user_schema = {
@@ -529,6 +553,7 @@ class SqliteAnnotationDbMixin:
 
     def _setup_db(self, db: typing.Union[SupportsFeatures, sqlite3.Connection]) -> None:
         """initialises the db, using the db passed to the constructor"""
+
         if isinstance(db, self.__class__):
             self._db = db.db
             return
@@ -665,7 +690,7 @@ class SqliteAnnotationDbMixin:
             end=end,
             allow_partial=allow_partial,
         )
-        for result in self._execute_sql(sql, values=vals):
+        for result in self._execute_sql(sql, values=vals).fetchall():
             result = dict(zip(result.keys(), result))
             result["on_alignment"] = result.get("on_alignment")
             result["spans"] = [tuple(c) for c in result["spans"]]
@@ -947,8 +972,9 @@ class SqliteAnnotationDbMixin:
 
         if not annot_db or not len(annot_db):
             return
-
+        print("FROM OTHER")
         self._update_db_from_other_db(annot_db, seqids=seqids)
+        print("DONE")
 
     def union(self, annot_db: SupportsFeatures) -> SupportsFeatures:
         """returns a new instance with merged records with other
@@ -1166,9 +1192,16 @@ class GffAnnotationDb(SqliteAnnotationDbMixin):
         # ensure serialisable state reflects this
         self._serialisable["source"] = self.source
         self._db = None
+
+        print("Setting up db")
         self._setup_db(db)
+        print("set up db")
+
         data = self._merged_data(data)
+        print("data")
         self.add_records(data)
+        print("records")
+        print("DONE")
 
     def add_records(self, reduced: dict) -> None:
         col_order = [
@@ -1239,6 +1272,429 @@ class GffAnnotationDb(SqliteAnnotationDbMixin):
         del records
 
         return reduced
+
+
+class EnsemblFeaturesDb(GffAnnotationDb):
+    def __deepcopy__(self, memodict=None):
+        memodict = memodict or {}
+
+        # use rich dict
+        rd = self.to_rich_dict()
+        return type(self).from_dict(rd)
+
+    def _setup_db(
+        self, db: typing.Union[SupportsFeatures, duckdb.DuckDBPyConnection]
+    ) -> None:
+        """initialises the db, using the db passed to the constructor"""
+        print("A", type(db))
+        if isinstance(db, self.__class__):
+            self._db = db.db
+            return
+
+        print("B", type(db))
+        if isinstance(db, duckdb.DuckDBPyConnection):
+            schema = {}
+            print("PART 1")
+            for table_name in self.table_names:
+                attr = getattr(self, f"_{table_name}_schema")
+                schema[table_name] = set(attr.items())
+
+            print("PART 2")
+            if not _compatible_schema_duckdb(db, schema):
+                raise TypeError("incompatible schema")
+
+            print("PART 3")
+            self._db = db
+            self._init_tables()
+            return
+
+        print("C", type(db))
+        if db and not self.compatible(db):
+            raise TypeError(f"cannot initialise annotation db from {type(db)}")
+
+        print("D init tables")
+        self._init_tables()
+
+        print("E")
+        if db and len(db):
+            # update self with data from other
+            self.update(db)
+        print("F", type(db))
+
+    def _init_tables(self) -> None:
+        # bit of magic
+        # assumes schema attributes named as `_<table name>_schema`
+        print("START")
+        for table_name in self.table_names:
+            print("DOING", table_name)
+            attr = getattr(self, f"_{table_name}_schema")
+            sql = _make_table_sql(table_name, attr)
+
+            sql = clean_sql(sql)
+            print(sql)
+            self._execute_sql(sql)
+            print("Success")
+
+    @property
+    def db(self) -> duckdb.DuckDBPyConnection:
+        if self._db is None:
+            print("FIRST TIME CONNECT to", self.source, type(self.source))
+            self._db = duckdb.connect(str(self.source))
+
+        return self._db
+
+    def _execute_sql(self, cmnd, values=None):
+        cursor = self.db.cursor()
+        cursor.execute(cmnd, values or [])
+        return cursor
+
+    def add_records(self, reduced: dict) -> None:
+        col_order = [r[1] for r in self.db.execute("PRAGMA table_info(gff)").fetchall()]
+        val_placeholder = ", ".join("?" * len(col_order))
+        sql = f"INSERT INTO gff ({', '.join(col_order)}) VALUES ({val_placeholder})"
+
+        # Can we really trust text case of "ID" and "Parent" to be consistent
+        # across sources of gff?? I doubt it, so more robust regex likely
+        # required
+        rows = []
+        for record in reduced.values():
+            # our Feature code assumes start always < end,
+            # we record direction using Strand
+            spans = numpy.array(sorted(record["spans"]), dtype=int)  # sorts the rows
+            spans.sort(axis=1)
+            record["start"] = int(spans.min())
+            record["end"] = int(spans.max())
+            record["spans"] = spans.flatten().tolist()
+            rows.append(tuple(record.get(c) for c in col_order))
+
+        sql = clean_sql(sql)
+        print(sql)
+        print(rows)
+        self.db.executemany(sql, rows)
+        self.db.commit()
+        del reduced
+
+    def add_feature(
+        self,
+        *,
+        seqid: str,
+        biotype: str,
+        name: str,
+        spans: typing.List[typing.Tuple[int, int]],
+        parent_id: OptionalStr = None,
+        strand: OptionalStr = None,
+        attributes: OptionalStr = None,
+        on_alignment: OptionalBool = False,
+    ) -> None:
+        """adds a record to user table
+
+        Parameters
+        ----------
+        seqid : str
+            name of the sequence feature resides on
+        biotype : str
+            biological type of the record
+        name : str
+            the name of a record, an identifier
+        spans : typing.List[typing.Tuple[int, int]], optional
+            this will be sorted
+        strand : str, optional
+            either +, -. Defaults to '+'
+        attributes : str, optional
+            additional attributes as a string
+        on_alignment : bool, optional
+            whether the annotation is an alignment annotation
+        """
+        spans = numpy.array(sorted(sorted(coords) for coords in spans), dtype=int)
+        # the start, end variables are added into the record via the loop
+        # on local variables
+        start = int(spans.min())
+        end = int(spans.max())
+        # we define record as all defined variables from local name space,
+        # excluding "self"
+        spans = spans.flatten().tolist()
+        record = {k: v for k, v in locals().items() if k != "self" and v is not None}
+        sql, values = _add_record_sql("user", record)
+        sql = clean_sql(sql)
+        print(sql)
+        print(values)
+        self._execute_sql(sql, values=values)
+        print("SUCCESS")
+
+    def _get_feature_by_id(
+        self,
+        table_name: str,
+        columns: typing.Optional[typing.Iterable[str]],
+        column: str,
+        name: str,
+        start: OptionalInt = None,
+        end: OptionalInt = None,
+        biotype: OptionalStr = None,
+        allow_partial: bool = False,
+    ) -> typing.List[FeatureDataType]:
+        # we return the parent_id because `get_feature_parent()` requires it
+        sql, vals = _select_records_sql(
+            table_name=table_name,
+            conditions={column: name, "biotype": biotype},
+            columns=columns,
+            start=start,
+            end=end,
+            allow_partial=allow_partial,
+        )
+        for result in self._execute_sql(sql, values=vals).fetchall():
+            r = {}
+            for a, b in zip(columns, result):
+                r[a] = b
+            result = r
+            print(result)
+            result["on_alignment"] = result.get("on_alignment")
+            result["spans"] = [
+                tuple(c) for c in numpy.array(result["spans"]).reshape(-1, 2)
+            ]
+            yield result
+
+    def get_records_matching(
+        self,
+        *,
+        biotype: str = None,
+        seqid: str = None,
+        name: str = None,
+        start: int = None,
+        end: int = None,
+        strand: OptionalStr = None,
+        attributes: OptionalStr = None,
+        on_alignment: bool = None,
+        allow_partial: bool = False,
+    ) -> typing.Iterator[dict]:
+        """return all fields for matching records"""
+        # a record is Everything, a Feature is a subset
+        # we define query as all defined variables from local name space,
+        # excluding "self" and kwargs at default values
+        kwargs = {k: v for k, v in locals().items() if k != "self" and v is not None}
+        # alignment features are created by the user specific
+        table_names = ["user"] if on_alignment else self.table_names
+        for table_name in table_names:
+            for result in self._get_records_matching(table_name, **kwargs):
+                print(result)
+                print(kwargs)
+                columns = [
+                    x[1]
+                    for x in self._execute_sql(
+                        f"PRAGMA table_info({table_name})"
+                    ).fetchall()
+                ]
+                r = {}
+                for a, b in zip(columns, result):
+                    r[a] = b
+                result = r
+                yield result
+
+    def to_rich_dict(self) -> dict:
+        """returns a dict suitable for json serialisation"""
+        result = {
+            "type": get_object_provenance(self),
+            "version": __version__,
+            "tables": {},
+            "init_args": {**self._serialisable},
+        }
+        tables = result["tables"]
+        for table_name in self.table_names:
+            table_data = []
+            columns = [
+                x[1]
+                for x in self._execute_sql(
+                    f"PRAGMA table_info({table_name})"
+                ).fetchall()
+            ]
+            for record in self._get_records_matching(table_name):
+                r = {}
+                for a, b in zip(columns, record):
+                    r[a] = b
+                store = {k: v for k, v in r.items() if v is not None}
+                store["spans"] = numpy.array(store["spans"]).reshape(-1, 2).tolist()
+                table_data.append(store)
+            tables[table_name] = table_data
+        return result
+
+    def get_features_matching(
+        self,
+        *,
+        biotype: str = None,
+        seqid: str = None,
+        name: str = None,
+        start: int = None,
+        end: int = None,
+        strand: OptionalStr = None,
+        attributes: OptionalStr = None,
+        on_alignment: bool = None,
+        allow_partial: bool = False,
+    ) -> typing.Iterator[FeatureDataType]:
+        # returns essential values to create a Feature
+        # we define query as all defined variables from local name space,
+        # excluding "self" and kwargs with a default value of None
+        print("GET FEATURES")
+        kwargs = {k: v for k, v in locals().items() if k != "self" and v is not None}
+        # alignment features are created by the user specific
+        table_names = ["user"] if on_alignment else self.table_names
+        for table_name in table_names:
+            print("ITERATING TABLE NAMES")
+            columns = ("seqid", "biotype", "spans", "strand", "name")
+            query_args = {**kwargs}
+
+            if table_name == "user":
+                columns += ("on_alignment",)
+            else:
+                query_args.pop("on_alignment", None)
+
+            print("ITERATING RESULT")
+            for result in self._get_records_matching(
+                table_name=table_name, columns=columns, **query_args
+            ):
+                print("IN")
+                r = {}
+                for a, b in zip(columns, result):
+                    r[a] = b
+                result = r
+                print(result)
+                result["on_alignment"] = result.get("on_alignment")
+                result["spans"] = [
+                    tuple(c) for c in numpy.array(result["spans"]).reshape(-1, 2)
+                ]
+                yield result
+
+    @property
+    def describe(self) -> Table:
+        """top level description of the annotation db"""
+        sql_template = "SELECT {}, COUNT(*) FROM {} GROUP BY {};"
+        data = {}
+        for column in ("seqid", "biotype"):
+            for table in self.table_names:
+                sql = sql_template.format(column, table, column)
+                if result := self._execute_sql(sql).fetchall():
+                    counts = dict(tuple(r) for r in result)
+                    for distinct, count in counts.items():
+                        key = f"{column}({distinct!r})"
+                        data[key] = data.get(key, 0) + count
+
+        row_counts = []
+        for table in self.table_names:
+            result = self._execute_sql(
+                f"SELECT COUNT(*) as count FROM {table}"
+            ).fetchone()
+            row_counts.append(result[0])
+
+        return Table(
+            data={
+                "": list(data.keys()) + [f"num_rows({t!r})" for t in self.table_names],
+                "count": list(data.values()) + row_counts,
+            },
+            column_templates=dict(count=lambda x: f"{x:,}"),
+        )
+
+    def _update_db_from_other_db(
+        self, other_db: SupportsFeatures, seqids: OptionalStrContainer = None
+    ):
+        conditions = {"seqid": seqids} if seqids else {}
+        table_names = other_db.table_names
+
+        col_order = {
+            tname: [
+                row[1]
+                for row in other_db.db.execute(f"PRAGMA table_info({tname})").fetchall()
+            ]
+            for tname in table_names
+        }
+
+        for tname in other_db.table_names:
+            sql, vals = _select_records_sql(table_name=tname, conditions=conditions)
+            data = other_db._execute_sql(sql, vals).fetchall()
+            val_placeholder = ", ".join("?" * len(col_order[tname]))
+            sql = f"INSERT INTO {tname} ({', '.join(col_order[tname])}) VALUES ({val_placeholder})"
+            sql = clean_sql(sql)
+            print("EXECUTING")
+            print(sql)
+            print(data)
+            self.db.executemany(sql, data)
+            print("DONE")
+
+    def _get_records_matching(
+        self, table_name: str, **kwargs
+    ) -> typing.Iterator[sqlite3.Row]:
+        """return all fields"""
+        if kwargs.get("attributes", None) and "%%" not in kwargs["attributes"]:
+            kwargs["attributes"] = f'%{kwargs["attributes"]}%'
+        columns = kwargs.pop("columns", None)
+        allow_partial = kwargs.pop("allow_partial", False)
+        sql, vals = _select_records_sql(
+            table_name=table_name,
+            conditions=kwargs,
+            columns=columns,
+            allow_partial=allow_partial,
+        )
+        sql = clean_sql(sql)
+        yield from self._execute_sql(sql, values=vals).fetchall()
+
+    def biotype_counts(self) -> dict:
+        """return counts of biological types across all tables and seqids"""
+        sql_template = "SELECT biotype FROM {}"
+        counts = collections.Counter()
+        for table in self.table_names:
+            sql = sql_template.format(table)
+            if result := self._execute_sql(sql).fetchall():
+                counts.update(v for r in result if (v := r[0]))
+        return counts
+
+    def subset(
+        self,
+        *,
+        source: os.PathLike | str = ":memory:",
+        biotype: str = None,
+        seqid: str = None,
+        name: str = None,
+        start: OptionalInt = None,
+        end: OptionalInt = None,
+        strand: OptionalStr = None,
+        attributes: OptionalStr = None,
+        allow_partial: bool = False,
+    ) -> typing_extensions.Self:
+        """returns a new db instance with records matching the provided conditions"""
+        # make sure python, not numpy, integers
+        start = start if start is None else int(start)
+        end = end if end is None else int(end)
+
+        kwargs = {k: v for k, v in locals().items() if k not in {"self", "source"}}
+
+        result = self.__class__(source=source)
+        if not len(self):
+            return result
+
+        print("STARTING TABLE NAME")
+        for table_name in self.table_names:
+            cols = [
+                r[1]
+                for r in self.db.execute(f"PRAGMA table_info({table_name})").fetchall()
+            ]
+            pos = ", ".join("?" * len(cols))
+            sql = f"INSERT INTO {table_name} ({','.join(cols)}) VALUES ({pos});"
+            records = []
+            print("RECORDS", cols)
+            for record in self._get_records_matching(table_name=table_name, **kwargs):
+                records.append(tuple(record))
+
+            sql = clean_sql(sql)
+
+            result.db.executemany(sql, records)
+            result.db.commit()
+
+        return result
+
+
+def clean_sql(sql):
+    if "end" in sql:
+        sql = sql.replace("end", '"end"')
+    if "array" in sql:
+        sql = sql.replace("array", "INT[]")
+    return sql
 
 
 # The GenBank format is less clear on the relationship between identifiers,
@@ -1473,6 +1929,11 @@ def deserialise_gff_db(data: dict):
     return GffAnnotationDb.from_dict(data)
 
 
+@register_deserialiser(get_object_provenance(EnsemblFeaturesDb))
+def deserialise_gff_db(data: dict):
+    return EnsemblFeaturesDb.from_dict(data)
+
+
 @register_deserialiser(get_object_provenance(GenbankAnnotationDb))
 def deserialise_gb_db(data: dict):
     return GenbankAnnotationDb.from_dict(data)
@@ -1539,6 +2000,7 @@ def _db_from_gff(
     seqids: OptionalStrContainer,
     db: SupportsFeatures,
     write_path,
+    backend: typing.Literal["duckdb", "sqlite3"],
     **kwargs,
 ):
     from cogent3.parse.gff import gff_parser
@@ -1556,7 +2018,10 @@ def _db_from_gff(
                 attribute_parser=_leave_attributes,
             )
         )
-        db = GffAnnotationDb(source=write_path, data=data, db=db)
+        if backend == "sqlite3":
+            db = GffAnnotationDb(source=write_path, data=data, db=db)
+        else:
+            db = EnsemblFeaturesDb(source=write_path, data=data, db=db)
         one_valid_path = True
     if not one_valid_path:
         raise IOError(f"{str(path)!r} not found")
@@ -1569,6 +2034,7 @@ def load_annotations(
     seqids: OptionalStr = None,
     db: SupportsFeatures = None,
     write_path: os.PathLike = ":memory:",
+    backend: typing.Literal["duckdb", "sqlite3"],
     show_progress: bool = False,
 ) -> SupportsFeatures:
     """loads annotations from flatfile into a db
@@ -1586,6 +2052,8 @@ def load_annotations(
     write_path
         where the constructed database should be written, defaults to
         memory only
+    backend
+        database backend to use (duckdb or sqlite3)
     show_progress
         applied only if loading features from multiple files
 
@@ -1606,6 +2074,7 @@ def load_annotations(
             seqids=seqids,
             db=db,
             write_path=write_path,
+            backend=backend,
             show_progress=show_progress,
         )
     )
