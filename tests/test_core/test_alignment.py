@@ -3675,3 +3675,42 @@ def test_sequence_collection_repr():
     data = {}
     seqs = SequenceCollection(data=data, moltype=BYTES)
     assert repr(seqs) == "0x () bytes seqcollection"
+
+
+def test_alignment_repr():
+    data = {
+        "a": "GCAT" * 10,
+        "b": "GCCT" * 10,
+    }
+    seqs = Alignment(data=data, moltype=DNA)
+    assert repr(seqs) == "2 x 40 alignment: a[GCATGCATGCA...], b[GCCTGCCTGCC...]"
+
+    data = {
+        "b": "GCCT" * 10,
+        "a": "GCAT" * 10,
+    }
+    seqs = Alignment(data=data, moltype=DNA)
+    assert repr(seqs) == "2 x 40 alignment: b[GCCTGCCTGCC...], a[GCATGCATGCA...]"
+
+    data = {
+        "a": "TCGAT",
+    }
+    seqs = Alignment(data=data, moltype=DNA)
+    assert repr(seqs) == "1 x 5 alignment: a[TCGAT]"
+
+    data = {
+        "a": "A" * 11,
+        "b": "B" * 11,
+        "c": "C" * 11,
+        "d": "D" * 11,
+        "e": "E" * 11,
+    }
+    seqs = Alignment(data=data, moltype=ASCII)
+    assert (
+        repr(seqs)
+        == "5 x 11 alignment: a[AAAAAAAAAAA...], b[BBBBBBBBBBB...], c[CCCCCCCCCCC...], ..."
+    )
+
+    # data = {}
+    # seqs = Alignment(data=data, moltype=BYTES)
+    # assert repr(seqs) == "0x () bytes seqcollection"
