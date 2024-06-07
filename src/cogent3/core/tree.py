@@ -102,14 +102,14 @@ class TreeNode(object):
             parent.append(self)
 
     # built-in methods and list interface support
-    def __repr__(self):
+    def __repr__(self):  # Done
         """Returns reconstructable string representation of tree.
 
         WARNING: Does not currently set the class to the right type.
         """
         return f'Tree("{self.get_newick()}")'
 
-    def __str__(self):
+    def __str__(self):  # Done
         """Returns Newick-format string representation of tree."""
         return self.get_newick()
 
@@ -126,13 +126,13 @@ class TreeNode(object):
     # def __ne__(self, other):
     # return self.name != other.name
 
-    def __lt__(self, other):
+    def __lt__(self, other):  # Done
         return self.name < other.name
 
-    def __gt__(self, other):
+    def __gt__(self, other):  # Done
         return self.name > other.name
 
-    def compare_name(self, other):
+    def compare_name(self, other):  # Done
         """Compares TreeNode by name"""
         return True if self is other else self.name == other.name
 
@@ -194,7 +194,7 @@ class TreeNode(object):
                 return True
         return False
 
-    def __getitem__(self, i):
+    def __getitem__(self, i):  # Done
         """Node delegates slicing to children; faster to access them
         directly."""
         return self.children[i]
@@ -212,7 +212,7 @@ class TreeNode(object):
             coerced_val = self._to_self_child(val)
             self.children[i] = coerced_val
 
-    def __delitem__(self, i):
+    def __delitem__(self, i):  # Done
         """del node[i] deletes index or slice from self.children."""
         curr = self.children[i]
         if isinstance(i, slice):
@@ -222,7 +222,7 @@ class TreeNode(object):
             curr._parent = None
         del self.children[i]
 
-    def __iter__(self):
+    def __iter__(self):  # Done
         """Node iter iterates over the children."""
         return iter(self.children)
 
@@ -290,15 +290,15 @@ class TreeNode(object):
 
     parent = property(_get_parent, _set_parent)
 
-    def index_in_parent(self):
+    def index_in_parent(self):  # Done
         """Returns index of self in parent."""
         return self._parent.children.index(self)
 
-    def is_tip(self):
+    def is_tip(self):  # Done
         """Returns True if the current node is a tip, i.e. has no children."""
         return not self.children
 
-    def is_root(self):
+    def is_root(self):  # Done
         """Returns True if the current is a root, i.e. has no parent."""
         return self._parent is None
 
@@ -433,7 +433,7 @@ class TreeNode(object):
                 child_index_stack.pop()
                 child_index_stack[-1] += 1
 
-    def ancestors(self):
+    def ancestors(self):  # Done
         """Returns all ancestors back to the root. Dynamically calculated."""
         result = []
         curr = self._parent
@@ -442,7 +442,7 @@ class TreeNode(object):
             curr = curr._parent
         return result
 
-    def root(self):
+    def root(self):  # Done
         """Returns root of the tree self is in. Dynamically calculated."""
         curr = self
         while curr._parent is not None:
@@ -453,7 +453,7 @@ class TreeNode(object):
         """Returns True if root of a tree, i.e. no parent."""
         return self.is_root()
 
-    def siblings(self):
+    def siblings(self):  # Done
         """Returns all nodes that are children of the same parent as self.
 
         Note: excludes self from the list. Dynamically calculated.
@@ -464,7 +464,7 @@ class TreeNode(object):
         result.remove(self)
         return result
 
-    def iter_tips(self, include_self=False):
+    def iter_tips(self, include_self=False):  # Done
         """Iterates over tips descended from self, [] if self is a tip."""
         # bail out in easy case
         if not self.children:
@@ -480,7 +480,7 @@ class TreeNode(object):
             else:
                 yield curr
 
-    def tips(self, include_self=False):
+    def tips(self, include_self=False):  # Done
         """Returns tips descended from self, [] if self is a tip."""
         return list(self.iter_tips(include_self=include_self))
 
@@ -501,11 +501,11 @@ class TreeNode(object):
         """Returns True if is tip, i.e. no children."""
         return not self.children
 
-    def tip_children(self):
+    def tip_children(self):  # Done
         """Returns direct children of self that are tips."""
         return [i for i in self.children if not i.children]
 
-    def non_tip_children(self):
+    def non_tip_children(self):  # Done
         """Returns direct children in self that have descendants."""
         return [i for i in self.children if i.children]
 
