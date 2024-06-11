@@ -537,7 +537,7 @@ class TreeNode(object):
         result.append(curr)
         return result
 
-    def last_common_ancestor(self, other):
+    def last_common_ancestor(self, other):  # Done
         """Finds last common ancestor of self and other, or None.
 
         Always tests by identity.
@@ -591,11 +591,12 @@ class TreeNode(object):
 
         return curr
 
+    # Done
     lca = last_common_ancestor  # for convenience
 
     # support for more advanced tree operations
 
-    def separation(self, other):
+    def separation(self, other):  # Done
         """Returns number of edges separating self and other."""
         # detect trivial case
         if self is other:
