@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, overload
 
@@ -231,6 +232,7 @@ class AbstractTreeNode(ABC):
         ------
             Iterator over tips.
         """
+        # TODO: include_self keyword only? boolean trap
         # Handle case for include self when no children
         if not self.children:
             if include_self:
@@ -263,6 +265,7 @@ class AbstractTreeNode(ABC):
         -------
             list of tip nodes.
         """
+        # TODO: include_self keyword only? boolean trap
         return list(self.iter_tips(include_self=include_self))
 
     def tip_children(self) -> list[Self]:
@@ -312,7 +315,8 @@ class AbstractTreeNode(ABC):
             The number of edges between self and other.
             None if they are not connected.
         """
-        # TODO: if the nodes don't belong to the same tree, should it throw an error instead?
+        # TODO: if the nodes don't belong to the same tree,
+        # should it throw an error instead?
 
         # handle trivial case
         if self is other:
@@ -336,3 +340,87 @@ class AbstractTreeNode(ABC):
             other_curr = other_curr.parent
 
         return None
+
+    def get_newick(
+        self,
+        with_distances: bool = False,
+        semicolon: bool = True,
+        escape_name: bool = True,
+        with_node_names: bool = False,
+    ) -> str:
+        """Return the newick string of node and its descendents
+
+        Parameters
+        ----------
+        with_distances, optional
+            include value of node length attribute if present.
+        semicolon, optional
+            end tree string with a semicolon
+        escape_name, optional
+            if any of these characters []'"(),
+            nodes name, wrap the name in single quotes
+        with_node_names, optional
+            includes internal node names (except 'root')
+
+        Returns
+        -------
+            The newick formatted string.
+        """
+        # TODO: args keyword only? boolean trap
+        result = ["("]
+        nodes_stack = [[self, len(self.children)]]
+        node_count = 1
+
+        while nodes_stack:
+            node_count += 1
+            # check the top node, any children left unvisited?
+            top = nodes_stack[-1]
+            top_node, num_unvisited_children = top
+            if num_unvisited_children:  # has any child unvisited
+                top[1] -= 1  # decrease the # of children unvisited
+                # - for order
+                next_child = top_node.children[-num_unvisited_children]
+                # pre-visit
+                if next_child.children:
+                    result.append("(")
+                nodes_stack.append([next_child, len(next_child.children)])
+            else:  # no unvisited children
+                nodes_stack.pop()
+                # post-visit
+                if top_node.children:
+                    result[-1] = ")"
+
+                if top_node.name_loaded or with_node_names:
+                    if top_node.name is None or with_node_names and top_node.is_root():
+                        name = ""
+                    else:
+                        name = str(top_node.name)
+                        if escape_name and not (
+                            name.startswith("'") and name.endswith("'")
+                        ):
+                            if re.search("""[]['"(),:;_]""", name):
+                                name = "'%s'" % name.replace("'", "''")
+                            else:
+                                name = name.replace(" ", "_")
+                    result.append(name)
+
+                if (
+                    with_distances
+                    and (length := getattr(top_node, "length", None)) is not None
+                ):
+                    result[-1] = f"{result[-1]}:{length}"
+
+                result.append(",")
+
+        len_result = len(result)
+        if len_result == 2:  # single node no name
+            return ";" if semicolon else ""
+
+        if len_result == 3:  # single node with name
+            return f"{result[1]};" if semicolon else result[1]
+
+        if semicolon:
+            result[-1] = ";"
+        else:
+            result.pop(-1)
+        return "".join(result)

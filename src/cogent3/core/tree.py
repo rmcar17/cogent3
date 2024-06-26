@@ -778,7 +778,7 @@ class TreeNode(object):
         """returns json formatted string {'newick': with edges and distances, 'edge_attributes': }"""
         return json.dumps(self.to_rich_dict())
 
-    def get_newick(
+    def get_newick(  # Done
         self,
         with_distances=False,
         semicolon=True,
